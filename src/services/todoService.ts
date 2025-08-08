@@ -1,12 +1,9 @@
-import { TodoRepository } from "@/repositories/todoRepository";
 import {
+  TodoRepository,
   Todo,
   CreateTodoRequest,
   UpdateTodoRequest,
-  TodoFilters,
-} from "@/types/todo";
-import { ApiResponse } from "@/types/api";
-import { Id } from "@/types/utils";
+} from "@/repositories/todoRepository";
 
 export class TodoService {
   private todoRepository: TodoRepository;
@@ -15,7 +12,12 @@ export class TodoService {
     this.todoRepository = new TodoRepository();
   }
 
-  async getAllTodos(): Promise<ApiResponse<Todo[]>> {
+  // 모든 Todo 조회
+  async getAllTodos(): Promise<{
+    success: boolean;
+    data: Todo[];
+    message: string;
+  }> {
     try {
       const todos = await this.todoRepository.findAll();
       return {
@@ -24,36 +26,40 @@ export class TodoService {
         message: "Todos retrieved successfully",
       };
     } catch (error) {
+      console.error("Failed to fetch todos:", error);
       return {
         success: false,
-        error: `Failed to retrieve todos: ${error}`,
+        data: [],
+        message: "Failed to fetch todos",
       };
     }
   }
 
-  async getTodoById(id: Id): Promise<ApiResponse<Todo>> {
+  // ID로 Todo 조회
+  async getTodoById(
+    id: number
+  ): Promise<{ success: boolean; data: Todo | null; message: string }> {
     try {
       const todo = await this.todoRepository.findById(id);
-      if (!todo) {
-        return {
-          success: false,
-          error: "Todo not found",
-        };
-      }
       return {
         success: true,
         data: todo,
-        message: "Todo retrieved successfully",
+        message: todo ? "Todo retrieved successfully" : "Todo not found",
       };
     } catch (error) {
+      console.error(`Failed to fetch todo with id ${id}:`, error);
       return {
         success: false,
-        error: `Failed to retrieve todo: ${error}`,
+        data: null,
+        message: "Failed to fetch todo",
       };
     }
   }
 
-  async createTodo(data: CreateTodoRequest): Promise<ApiResponse<Todo>> {
+  // Todo 생성
+  async createTodo(
+    data: CreateTodoRequest
+  ): Promise<{ success: boolean; data: Todo | null; message: string }> {
     try {
       const todo = await this.todoRepository.create(data);
       return {
@@ -62,152 +68,102 @@ export class TodoService {
         message: "Todo created successfully",
       };
     } catch (error) {
+      console.error("Failed to create todo:", error);
       return {
         success: false,
-        error: `Failed to create todo: ${error}`,
+        data: null,
+        message: "Failed to create todo",
       };
     }
   }
 
+  // Todo 수정
   async updateTodo(
-    id: Id,
+    id: number,
     data: UpdateTodoRequest
-  ): Promise<ApiResponse<Todo>> {
+  ): Promise<{ success: boolean; data: Todo | null; message: string }> {
     try {
-      const existingTodo = await this.todoRepository.findById(id);
-      if (!existingTodo) {
-        return {
-          success: false,
-          error: "Todo not found",
-        };
-      }
-
-      const updatedTodo = await this.todoRepository.update(id, data);
+      const todo = await this.todoRepository.update(id, data);
       return {
         success: true,
-        data: updatedTodo,
-        message: "Todo updated successfully",
+        data: todo,
+        message: todo ? "Todo updated successfully" : "Todo not found",
       };
     } catch (error) {
+      console.error(`Failed to update todo with id ${id}:`, error);
       return {
         success: false,
-        error: `Failed to update todo: ${error}`,
+        data: null,
+        message: "Failed to update todo",
       };
     }
   }
 
-  async deleteTodo(id: Id): Promise<ApiResponse<boolean>> {
+  // Todo 삭제
+  async deleteTodo(id: number): Promise<{ success: boolean; message: string }> {
     try {
-      const existingTodo = await this.todoRepository.findById(id);
-      if (!existingTodo) {
-        return {
-          success: false,
-          error: "Todo not found",
-        };
-      }
-
-      await this.todoRepository.delete(id);
+      const deleted = await this.todoRepository.delete(id);
       return {
-        success: true,
-        data: true,
-        message: "Todo deleted successfully",
+        success: deleted,
+        message: deleted ? "Todo deleted successfully" : "Todo not found",
       };
     } catch (error) {
+      console.error(`Failed to delete todo with id ${id}:`, error);
       return {
         success: false,
-        error: `Failed to delete todo: ${error}`,
+        message: "Failed to delete todo",
       };
     }
   }
 
-  async getTodoByFilters(filters: TodoFilters): Promise<ApiResponse<Todo[]>> {
+  // Todo 완료 상태 토글
+  async toggleTodoComplete(
+    id: number
+  ): Promise<{ success: boolean; data: Todo | null; message: string }> {
     try {
-      const todos = await this.todoRepository.findByFilters(filters);
+      const todo = await this.todoRepository.toggleComplete(id);
       return {
         success: true,
-        data: todos,
-        message: `Found ${todos.length} todos matching filters`,
+        data: todo,
+        message: todo ? "Todo status toggled successfully" : "Todo not found",
       };
     } catch (error) {
+      console.error(`Failed to toggle todo with id ${id}:`, error);
       return {
         success: false,
-        error: `Failed to retrieve todos with filters: ${error}`,
+        data: null,
+        message: "Failed to toggle todo status",
       };
     }
   }
 
-  async toggleTodoComplete(id: Id): Promise<ApiResponse<Todo>> {
+  // 통계 조회
+  async getTodoStats(): Promise<{
+    success: boolean;
+    data: { total: number; completed: number; pending: number } | null;
+    message: string;
+  }> {
     try {
-      const existingTodo = await this.todoRepository.findById(id);
-      if (!existingTodo) {
-        return {
-          success: false,
-          error: "Todo not found",
-        };
-      }
-
-      const updatedTodo = await this.todoRepository.update(id, {
-        completed: !existingTodo.completed,
-      });
-
-      return {
-        success: true,
-        data: updatedTodo,
-        message: `Todo ${
-          updatedTodo.completed ? "completed" : "uncompleted"
-        } successfully`,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Failed to toggle todo completion: ${error}`,
-      };
-    }
-  }
-
-  async getTodoStates(): Promise<
-    ApiResponse<{
-      total: number;
-      completed: number;
-      pending: number;
-      completionRate: number;
-      priorityStats: {
-        low: number;
-        medium: number;
-        high: number;
-      };
-    }>
-  > {
-    try {
-      const allTodos = await this.todoRepository.findAll();
-
-      const total = allTodos.length;
-      const completed = allTodos.filter((todo) => todo.completed).length;
-      const pending = total - completed;
-      const completionRate =
-        total > 0 ? Math.round((completed / total) * 100) : 0;
-
-      const priorityStats = {
-        low: allTodos.filter((todo) => todo.priority === "LOW").length,
-        medium: allTodos.filter((todo) => todo.priority === "MEDIUM").length,
-        high: allTodos.filter((todo) => todo.priority === "HIGH").length,
-      };
+      const [total, completed] = await Promise.all([
+        this.todoRepository.getTotalCount(),
+        this.todoRepository.getCompletedCount(),
+      ]);
 
       return {
         success: true,
         data: {
           total,
           completed,
-          pending,
-          completionRate,
-          priorityStats,
+          pending: total - completed,
         },
-        message: `Todo statistics retrieved successfully`,
+        message: "Todo stats retrieved successfully",
       };
     } catch (error) {
+      console.error("Failed to fetch todo stats:", error);
       return {
         success: false,
-        error: `Failed to retrieve todo statistics: ${error}`,
+        data: null,
+        message: "Failed to fetch todo stats",
       };
     }
   }

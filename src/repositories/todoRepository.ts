@@ -1,124 +1,158 @@
-import { prisma } from "@/lib/prisma";
 import {
-  Todo,
-  CreateTodoRequest,
-  UpdateTodoRequest,
-  TodoFilters,
-} from "@/types/todo";
-import { IFilterableRepository } from "./baseRepository";
-import { Id } from "@/types/utils";
+  executeQuery,
+  executeQuerySingle,
+  executeUpdate,
+} from "@/lib/database";
 
-export class TodoRepository
-  implements
-    IFilterableRepository<
-      Todo,
-      TodoFilters,
-      CreateTodoRequest,
-      UpdateTodoRequest
-    >
-{
+export interface Todo {
+  id: number;
+  title: string;
+  description: string | null;
+  completed: boolean;
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  dueDate: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateTodoRequest {
+  title: string;
+  description?: string;
+  priority?: "LOW" | "MEDIUM" | "HIGH";
+  dueDate?: Date;
+}
+
+export interface UpdateTodoRequest {
+  title?: string;
+  description?: string;
+  completed?: boolean;
+  priority?: "LOW" | "MEDIUM" | "HIGH";
+  dueDate?: Date;
+}
+
+export class TodoRepository {
+  // 모든 Todo 조회
   async findAll(): Promise<Todo[]> {
-    try {
-      return await prisma.todo.findMany({
-        orderBy: { createdAt: "desc" },
-      });
-    } catch (error) {
-      throw new Error(`Failed to fetch todos: ${error}`);
-    }
+    const query = `
+      SELECT id, title, description, completed, priority, dueDate, createdAt, updatedAt
+      FROM Todo
+      ORDER BY createdAt DESC
+    `;
+    return await executeQuery<Todo>(query);
   }
 
-  async findById(id: Id): Promise<Todo | null> {
-    try {
-      return await prisma.todo.findUnique({
-        where: { id },
-      });
-    } catch (error) {
-      throw new Error(`Failed to fetch todo with id ${id}: ${error}`);
-    }
+  // ID로 Todo 조회
+  async findById(id: number): Promise<Todo | null> {
+    const query = `
+      SELECT id, title, description, completed, priority, dueDate, createdAt, updatedAt
+      FROM Todo
+      WHERE id = ?
+    `;
+    return await executeQuerySingle<Todo>(query, [id]);
   }
 
+  // Todo 생성
   async create(data: CreateTodoRequest): Promise<Todo> {
-    try {
-      const createData: Record<string, unknown> = {
-        title: data.title,
-        description: data.description,
-        priority: data.priority || "MEDIUM",
-      };
+    const query = `
+      INSERT INTO Todo (title, description, completed, priority, dueDate, createdAt, updatedAt)
+      VALUES (?, ?, false, ?, ?, NOW(), NOW())
+    `;
 
-      if (data.dueDate) {
-        createData.dueDate = data.dueDate;
-      }
+    const result = await executeUpdate(query, [
+      data.title,
+      data.description || null,
+      data.priority || "MEDIUM",
+      data.dueDate || null,
+    ]);
 
-      return await prisma.todo.create({
-        data: createData as Parameters<typeof prisma.todo.create>[0]["data"],
-      });
-    } catch (error) {
-      throw new Error(`Failed to create todo: ${error}`);
+    // 생성된 Todo 조회
+    const createdTodo = await this.findById(result.insertId!);
+    if (!createdTodo) {
+      throw new Error("Todo 생성 후 조회 실패");
     }
+
+    return createdTodo;
   }
 
-  async update(id: Id, data: UpdateTodoRequest): Promise<Todo> {
-    try {
-      return await prisma.todo.update({
-        where: { id },
-        data,
-      });
-    } catch (error) {
-      throw new Error(`Failed to update todo with id ${id}: ${error}`);
+  // Todo 수정
+  async update(id: number, data: UpdateTodoRequest): Promise<Todo | null> {
+    const updateFields: string[] = [];
+    const params: unknown[] = [];
+
+    if (data.title !== undefined) {
+      updateFields.push("title = ?");
+      params.push(data.title);
     }
+    if (data.description !== undefined) {
+      updateFields.push("description = ?");
+      params.push(data.description);
+    }
+    if (data.completed !== undefined) {
+      updateFields.push("completed = ?");
+      params.push(data.completed);
+    }
+    if (data.priority !== undefined) {
+      updateFields.push("priority = ?");
+      params.push(data.priority);
+    }
+    if (data.dueDate !== undefined) {
+      updateFields.push("dueDate = ?");
+      params.push(data.dueDate);
+    }
+
+    updateFields.push("updatedAt = NOW()");
+    params.push(id);
+
+    const query = `
+      UPDATE Todo
+      SET ${updateFields.join(", ")}
+      WHERE id = ?
+    `;
+
+    const result = await executeUpdate(query, params);
+
+    if (result.affectedRows > 0) {
+      return await this.findById(id);
+    }
+
+    return null;
   }
 
-  async delete(id: Id): Promise<void> {
-    try {
-      await prisma.todo.delete({
-        where: { id },
-      });
-    } catch (error) {
-      throw new Error(`Failed to delete todo with id ${id}: ${error}`);
-    }
+  // Todo 삭제
+  async delete(id: number): Promise<boolean> {
+    const query = "DELETE FROM Todo WHERE id = ?";
+    const result = await executeUpdate(query, [id]);
+    return result.affectedRows > 0;
   }
 
-  async exists(id: Id): Promise<boolean> {
-    try {
-      const todo = await prisma.todo.findUnique({
-        where: { id },
-        select: { id: true },
-      });
-      return !!todo;
-    } catch (error) {
-      throw new Error(`Failed to check todo existence with id ${id}: ${error}`);
+  // Todo 완료 상태 토글
+  async toggleComplete(id: number): Promise<Todo | null> {
+    const query = `
+      UPDATE Todo
+      SET completed = NOT completed, updatedAt = NOW()
+      WHERE id = ?
+    `;
+
+    const result = await executeUpdate(query, [id]);
+
+    if (result.affectedRows > 0) {
+      return await this.findById(id);
     }
+
+    return null;
   }
 
-  async findByFilters(filters: TodoFilters): Promise<Todo[]> {
-    try {
-      const where: Record<string, unknown> = {};
+  // 완료된 Todo 개수 조회
+  async getCompletedCount(): Promise<number> {
+    const query = "SELECT COUNT(*) as count FROM Todo WHERE completed = true";
+    const result = await executeQuerySingle<{ count: number }>(query);
+    return result?.count || 0;
+  }
 
-      if (filters.completed !== undefined) {
-        where.completed = filters.completed;
-      }
-
-      if (filters.priority) {
-        where.priority = filters.priority;
-      }
-
-      if (filters.search) {
-        where.OR = [
-          { title: { contains: filters.search, mode: "insensitive" } },
-          { description: { contains: filters.search, mode: "insensitive" } },
-        ];
-      }
-
-      let orderBy: { [key: string]: "asc" | "desc" } = { createdAt: "desc" };
-      if (filters.sortBy) {
-        orderBy = { [filters.sortBy]: filters.sortOrder || "desc" };
-      }
-      return await prisma.todo.findMany({
-        where,
-        orderBy,
-      });
-    } catch (error) {
-      throw new Error(`Failed to fetch todos with filters: ${error}`);
-    }
+  // 전체 Todo 개수 조회
+  async getTotalCount(): Promise<number> {
+    const query = "SELECT COUNT(*) as count FROM Todo";
+    const result = await executeQuerySingle<{ count: number }>(query);
+    return result?.count || 0;
   }
 }

@@ -1,30 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TodoService } from "@/services/todoService";
 
-const todoService = new TodoService();
-
-export async function PATCH(
+export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
   try {
-    const todoId = parseInt(id);
+    const { id: idParam } = await params;
+    const id = parseInt(idParam);
 
-    if (isNaN(todoId)) {
-      return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+    if (isNaN(id) || id <= 0) {
+      return NextResponse.json(
+        { error: "올바른 Todo ID가 아닙니다." },
+        { status: 400 }
+      );
     }
 
-    const result = await todoService.toggleTodoComplete(todoId);
+    const todoService = new TodoService();
+    const result = await todoService.toggleTodoComplete(id);
 
     if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 404 });
+      return NextResponse.json({ error: result.message }, { status: 404 });
     }
 
     return NextResponse.json(result.data, { status: 200 });
-  } catch {
+  } catch (error) {
+    console.error("Todo 토글 오류:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Todo 상태 변경 중 오류가 발생했습니다." },
       { status: 500 }
     );
   }
