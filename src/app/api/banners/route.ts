@@ -1,9 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { BannerRepository } from "@/repositories/bannerRepository";
-import { BannerService } from "@/services/bannerService";
-
-const bannerRepository = new BannerRepository();
-const bannerService = new BannerService(bannerRepository);
 
 export async function GET(request: NextRequest) {
   return NextResponse.json(

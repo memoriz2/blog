@@ -1,4 +1,4 @@
-import { Priority } from "@prisma/client";
+export type Priority = "LOW" | "MEDIUM" | "HIGH";
 
 export interface Todo {
   id: number;
